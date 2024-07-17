@@ -40,7 +40,8 @@ def config():
             "21401550",
         ],
         batch_size=256,
-        rho=168,
+        forecast_history=168,
+        forecast_length=24,
         var_t=["gpm_tp", "gfs_tp"],
         var_c=[
             "area",  # 面积
@@ -85,7 +86,7 @@ def config():
         },
         which_first_tensor="sequence",
         rolling=True,
-        static=False,
+        long_seq_pred=False,
         early_stopping=True,
         patience=4,
         ensemble=True,

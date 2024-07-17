@@ -1,10 +1,10 @@
 """
 Author: Wenyu Ouyang
 Date: 2021-12-31 11:08:29
-LastEditTime: 2024-04-11 09:23:10
+LastEditTime: 2024-07-10 10:59:08
 LastEditors: Wenyu Ouyang
 Description: Config for hydroDL
-FilePath: \torchhydro\torchhydro\configs\config.py
+FilePath: /torchhydro/torchhydro/configs/config.py
 Copyright (c) 2021-2022 Wenyu Ouyang. All rights reserved.
 """
 
@@ -20,7 +20,7 @@ from hydroutils import hydro_file
 DAYMET_NAME = "daymet"
 SSM_SMAP_NAME = "ssm"
 ET_MODIS_NAME = "ET"
-Q_CAMELS_US_NAME = "usgsFlow"
+Q_CAMELS_US_NAME = "streamflow"
 Q_CAMELS_CC_NAME = "Q"
 PRCP_DAYMET_NAME = "prcp"
 PRCP_NLDAS_NAME = "total_precipitation"
@@ -33,6 +33,7 @@ ET_ERA5LAND_NAME = "total_evaporation"
 PRCP_ERA5LAND_NAME = "total_precipitation"
 PET_DAYMET_NAME = "PET"
 PET_ERA5LAND_NAME = "potential_evaporation"
+DATE_FORMATS = ["%Y-%m-%d-%H", "%Y-%m-%d"]  # 带小时的日期格式  # 不带小时的日期格式
 
 
 def default_config_file():
@@ -53,8 +54,8 @@ def default_config_file():
             "model_name": "LSTM",
             # the details of model parameters for the "model_name" model
             "model_hyperparam": {
-                # the rho in LSTM
-                "seq_length": 30,
+                # <- warmup -><- forecast_history -><- forecast_length ->
+                "forecast_history": 30,
                 "forecast_length": 30,
                 # the size of input (feature number)
                 "input_size": 24,
@@ -96,17 +97,23 @@ def default_config_file():
             "validation_path": None,
             "test_path": None,
             "batch_size": 100,
-            # the rho in LSTM
+            # we generally have three times: [warmup, forecast_history, forecast_length]
+            # For physics-based models, we need warmup; default is 0 as DL models generally don't need it
+            "warmup_length": 0,
+            # the length of the history data for forecasting
             "forecast_history": 30,
+            # the length of the forecast data
             "forecast_length": 1,
+            # the min time step of the input data
+            "min_time_unit": "D",
+            # the min time interval of the input data
+            "min_time_interval": 1,
             # modeled objects
             "object_ids": "ALL",
             # modeling time range
             "t_range_train": ["1992-01-01", "1993-01-01"],
             "t_range_valid": None,
             "t_range_test": ["1993-01-01", "1994-01-01"],
-            # For physics-based models, we need warmup; default is 0 as DL models generally don't need it
-            "warmup_length": 0,
             # the output
             "target_cols": [Q_CAMELS_US_NAME],
             "target_rm_nan": True,
@@ -206,9 +213,10 @@ def default_config_file():
             "dataset": "StreamflowDataset",
             # sampler for pytorch dataloader, here we mainly use it for Kuai Fang's sampler in all his DL papers
             "sampler": None,
-            "static": True,
         },
         "training_cfgs": {
+            "master_addr": "localhost",
+            "port": "12335",
             # if train_mode is False, don't train and evaluate
             "train_mode": True,
             "criterion": "RMSE",
@@ -241,7 +249,7 @@ def default_config_file():
             "start_epoch": 1,
             "batch_size": 100,
             "random_seed": 1234,
-            "device": [0],
+            "device": [0, 1, 2],
             "multi_targets": 1,
             "num_workers": 0,
             "which_first_tensor": "sequence",
@@ -259,6 +267,7 @@ def default_config_file():
                 "seeds": None,
                 "patience": None,
                 "early_stopping": None,
+                "kfold_continuous": True,
             },
         },
         # For evaluation
@@ -276,6 +285,8 @@ def default_config_file():
             "fill_nan": "no",
             "explainer": None,
             "rolling": None,
+            "long_seq_pred": True,
+            "calc_metrics": True,
         },
     }
 
@@ -293,6 +304,8 @@ def cmd(
     fl_local_ep=None,
     fl_local_bs=None,
     fl_frac=None,
+    master_addr=None,
+    port=None,
     ctx=None,
     rs=None,
     gage_id_file=None,
@@ -304,7 +317,9 @@ def cmd(
     lr_scheduler=None,
     opt_param=None,
     batch_size=None,
-    rho=None,
+    warmup_length=0,
+    forecast_history=None,
+    forecast_length=None,
     train_mode=None,
     train_epoch=None,
     save_epoch=None,
@@ -335,8 +350,8 @@ def cmd(
     fill_nan=None,
     explainer=None,
     rolling=None,
-    static=None,
-    warmup_length=0,
+    long_seq_pred=None,
+    calc_metrics=None,
     start_epoch=1,
     stat_dict_file=None,
     num_workers=None,
@@ -345,6 +360,8 @@ def cmd(
     ensemble_items=None,
     early_stopping=None,
     patience=None,
+    min_time_unit=None,
+    min_time_interval=None,
 ):
     """input args from cmd"""
     parser = argparse.ArgumentParser(
@@ -422,6 +439,20 @@ def cmd(
         help="the fraction of clients for federated learning",
         default=fl_frac,
         type=float,
+    )
+    parser.add_argument(
+        "--master_addr",
+        dest="master_addr",
+        help="Running Context --default is localhost if you only train model on your computer",
+        default=master_addr,
+        nargs="+",
+    )
+    parser.add_argument(
+        "--port",
+        dest="port",
+        help="Running Context -- which port do you want to use when using DistributedDataParallel",
+        default=port,
+        nargs="+",
     )
     parser.add_argument(
         "--ctx",
@@ -510,10 +541,24 @@ def cmd(
         type=float,
     )
     parser.add_argument(
-        "--rho",
-        dest="rho",
-        help="length of time sequence when training",
-        default=rho,
+        "--warmup_length",
+        dest="warmup_length",
+        help="Physical hydro models need warmup",
+        default=warmup_length,
+        type=int,
+    )
+    parser.add_argument(
+        "--forecast_history",
+        dest="forecast_history",
+        help="length of time sequence when training in encoder part, for decoder-only models, forecast_history=0",
+        default=forecast_history,
+        type=int,
+    )
+    parser.add_argument(
+        "--forecast_length",
+        dest="forecast_length",
+        help="length of time sequence when training in decoder part",
+        default=forecast_length,
         type=int,
     )
     parser.add_argument(
@@ -698,18 +743,18 @@ def cmd(
         type=int,
     )
     parser.add_argument(
-        "--static",
-        dest="static",
+        "--long_seq_pred",
+        dest="long_seq_pred",
         help="if True, direct, one-step, long-term sequence prediction",
-        default=static,
+        default=long_seq_pred,
         type=bool,
     )
     parser.add_argument(
-        "--warmup_length",
-        dest="warmup_length",
-        help="Physical hydro models need warmup",
-        default=warmup_length,
-        type=int,
+        "--calc_metrics",
+        dest="calc_metrics",
+        help="if False, calculate valid loss only",
+        default=calc_metrics,
+        type=bool,
     )
     parser.add_argument(
         "--start_epoch",
@@ -775,6 +820,20 @@ def cmd(
         default=patience,
         type=int,
     )
+    parser.add_argument(
+        "--min_time_unit",
+        dest="min_time_unit",
+        help="The min time type of the input data",
+        default=min_time_unit,
+        type=str,
+    )
+    parser.add_argument(
+        "--min_time_interval",
+        dest="min_time_interval",
+        help="The min time interval of the input data",
+        default=min_time_interval,
+        type=int,
+    )
     # To make pytest work in PyCharm, here we use the following code instead of "args = parser.parse_args()":
     # https://blog.csdn.net/u014742995/article/details/100119905
     args, unknown = parser.parse_known_args()
@@ -821,7 +880,7 @@ def update_cfg(cfg_file, new_args):
     if os.path.exists(result_dir) is False:
         os.makedirs(result_dir)
     if new_args.sub is not None:
-        subset, subexp = new_args.sub.split("/")
+        subset, subexp = new_args.sub.split(os.sep)
         cfg_file["data_cfgs"]["validation_path"] = os.path.join(
             project_dir, "results", subset, subexp
         )
@@ -849,6 +908,10 @@ def update_cfg(cfg_file, new_args):
         cfg_file["model_cfgs"]["fl_hyperparam"]["fl_local_bs"] = new_args.fl_local_bs
     if new_args.fl_frac is not None:
         cfg_file["model_cfgs1"]["fl_hyperparam"]["fl_frac"] = new_args.fl_frac
+    if new_args.master_addr is not None:
+        cfg_file["training_cfgs"]["master_addr"] = new_args.master_addr
+    if new_args.port is not None:
+        cfg_file["training_cfgs"]["port"] = new_args.port
     if new_args.ctx is not None:
         cfg_file["training_cfgs"]["device"] = new_args.ctx
     if new_args.rs is not None:
@@ -896,32 +959,32 @@ def update_cfg(cfg_file, new_args):
     cfg_file["data_cfgs"]["constant_rm_nan"] = bool(new_args.c_rm_nan != 0)
     if new_args.var_t is not None:
         cfg_file["data_cfgs"]["relevant_cols"] = new_args.var_t
+        print(
+            "!!!!!!NOTE!!!!!!!!\n-------Please make sure the PRECIPITATION variable is in the 1st location in var_t setting!!---------"
+        )
+        print("If you have POTENTIAL_EVAPOTRANSPIRATION, please set it the 2nd!!!-")
     if new_args.var_t_type is not None:
         cfg_file["data_cfgs"]["relevant_types"] = new_args.var_t_type
-    if new_args.t_rm_nan == 0:
-        cfg_file["data_cfgs"]["relevant_rm_nan"] = False
-    else:
-        cfg_file["data_cfgs"]["relevant_rm_nan"] = True
+    cfg_file["data_cfgs"]["relevant_rm_nan"] = bool(new_args.t_rm_nan != 0)
     if new_args.var_o is not None:
         cfg_file["data_cfgs"]["other_cols"] = new_args.var_o
     if new_args.var_out is not None:
         cfg_file["data_cfgs"]["target_cols"] = new_args.var_out
+        print(
+            "!!!!!!NOTE!!!!!!!!\n-------Please make sure the STREAMFLOW variable is in the 1st location in var_out setting!!---------"
+        )
     if new_args.var_to_source_map is not None:
         cfg_file["data_cfgs"]["var_to_source_map"] = new_args.var_to_source_map
-    if new_args.out_rm_nan == 0:
-        cfg_file["data_cfgs"]["target_rm_nan"] = False
-    else:
-        cfg_file["data_cfgs"]["target_rm_nan"] = True
+    cfg_file["data_cfgs"]["target_rm_nan"] = bool(new_args.out_rm_nan != 0)
     if new_args.target_as_input == 0:
         cfg_file["data_cfgs"]["target_as_input"] = False
-        if new_args.constant_only == 0:
-            cfg_file["data_cfgs"]["constant_only"] = False
-        else:
-            cfg_file["data_cfgs"]["constant_only"] = True
+        cfg_file["data_cfgs"]["constant_only"] = bool(new_args.constant_only != 0)
     else:
         cfg_file["data_cfgs"]["target_as_input"] = True
-    if new_args.rolling is not None:
-        cfg_file["data_cfgs"]["static"] = new_args.static
+    if new_args.long_seq_pred is not None:
+        cfg_file["evaluation_cfgs"]["long_seq_pred"] = new_args.long_seq_pred
+    if new_args.calc_metrics is not None:
+        cfg_file["evaluation_cfgs"]["calc_metrics"] = new_args.calc_metrics
     if new_args.train_epoch is not None:
         cfg_file["training_cfgs"]["epochs"] = new_args.train_epoch
     if new_args.save_epoch is not None:
@@ -934,10 +997,9 @@ def update_cfg(cfg_file, new_args):
         cfg_file["model_cfgs"]["model_name"] = new_args.model_name
     if new_args.weight_path is not None:
         cfg_file["model_cfgs"]["weight_path"] = new_args.weight_path
-        if new_args.continue_train is None or new_args.continue_train == 0:
-            continue_train = False
-        else:
-            continue_train = True
+        continue_train = bool(
+            new_args.continue_train is not None and new_args.continue_train != 0
+        )
         cfg_file["model_cfgs"]["continue_train"] = continue_train
     if new_args.weight_path_add is not None:
         cfg_file["model_cfgs"]["weight_path_add"] = new_args.weight_path_add
@@ -948,21 +1010,7 @@ def update_cfg(cfg_file, new_args):
                 "Please make sure size of vars in data_cfgs/target_cols is same as n_output"
             )
     if new_args.model_hyperparam is None:
-        if new_args.batch_size is not None:
-            batch_size = new_args.batch_size
-            cfg_file["model_cfgs"]["model_hyperparam"]["batch_size"] = batch_size
-            cfg_file["data_cfgs"]["batch_size"] = batch_size
-            cfg_file["training_cfgs"]["batch_size"] = batch_size
-        if new_args.rho is not None:
-            rho = new_args.rho
-            cfg_file["model_cfgs"]["model_hyperparam"]["seq_length"] = rho
-            cfg_file["data_cfgs"]["forecast_history"] = rho
-        if new_args.n_output is not None:
-            cfg_file["model_cfgs"]["model_hyperparam"][
-                "output_seq_len"
-            ] = new_args.n_output
-        if new_args.dropout is not None:
-            cfg_file["model_cfgs"]["model_hyperparam"]["dropout"] = new_args.dropout
+        raise AttributeError("Please set the model_hyperparam!!!")
     else:
         cfg_file["model_cfgs"]["model_hyperparam"] = new_args.model_hyperparam
         if "batch_size" in new_args.model_hyperparam.keys():
@@ -972,41 +1020,25 @@ def update_cfg(cfg_file, new_args):
             cfg_file["training_cfgs"]["batch_size"] = new_args.model_hyperparam[
                 "batch_size"
             ]
-        elif new_args.batch_size is not None:
-            batch_size = new_args.batch_size
-            cfg_file["data_cfgs"]["batch_size"] = batch_size
-            cfg_file["training_cfgs"]["batch_size"] = batch_size
-        else:
-            raise NotImplemented("Please set the batch_size!!!")
-        if "seq_length" in new_args.model_hyperparam.keys():
-            cfg_file["data_cfgs"]["forecast_history"] = new_args.model_hyperparam[
-                "seq_length"
-            ]
-        elif "forecast_history" in new_args.model_hyperparam.keys():
-            cfg_file["data_cfgs"]["forecast_history"] = new_args.model_hyperparam[
-                "forecast_history"
-            ]
-        elif new_args.rho is not None:
-            cfg_file["data_cfgs"]["forecast_history"] = new_args.rho
-        else:
-            raise NotImplemented(
-                "Please set the time_sequence length in a batch when training!!!"
-            )
-        if (
-            "output_seq_len" in new_args.model_hyperparam.keys()
-            and new_args.n_output is not None
-        ):
-            assert new_args.model_hyperparam["output_seq_len"] == new_args.n_output
         if "forecast_length" in new_args.model_hyperparam.keys():
             cfg_file["data_cfgs"]["forecast_length"] = new_args.model_hyperparam[
                 "forecast_length"
             ]
-        if "model_mode" in new_args.model_hyperparam.keys():
-            cfg_file["data_cfgs"]["model_mode"] = new_args.model_hyperparam[
-                "model_mode"
+        if "prec_window" in new_args.model_hyperparam.keys():
+            cfg_file["data_cfgs"]["prec_window"] = new_args.model_hyperparam[
+                "prec_window"
             ]
-        if "cnn_size" in new_args.model_hyperparam.keys():
-            cfg_file["data_cfgs"]["cnn_size"] = new_args.model_hyperparam["cnn_size"]
+    if new_args.batch_size is None:
+        raise AttributeError("Please set the batch_size!!!")
+    batch_size = new_args.batch_size
+    cfg_file["data_cfgs"]["batch_size"] = batch_size
+    cfg_file["training_cfgs"]["batch_size"] = batch_size
+    if new_args.min_time_unit is not None:
+        if new_args.min_time_unit not in ["h", "D"]:
+            raise ValueError("min_time_unit must be 'h' (HOURLY) or 'D' (DAILY)")
+        cfg_file["data_cfgs"]["min_time_unit"] = new_args.min_time_unit
+    if new_args.min_time_interval is not None:
+        cfg_file["data_cfgs"]["min_time_interval"] = new_args.min_time_interval
     if new_args.metrics is not None:
         cfg_file["evaluation_cfgs"]["metrics"] = new_args.metrics
     if new_args.fill_nan is not None:
@@ -1026,6 +1058,10 @@ def update_cfg(cfg_file, new_args):
             raise RuntimeError(
                 "Please set same warmup_length in model_cfgs and data_cfgs"
             )
+    if new_args.forecast_history is not None:
+        cfg_file["data_cfgs"]["forecast_history"] = new_args.forecast_history
+    if new_args.forecast_length is not None:
+        cfg_file["data_cfgs"]["forecast_length"] = new_args.forecast_length
     if new_args.start_epoch > 1:
         cfg_file["training_cfgs"]["start_epoch"] = new_args.start_epoch
     if new_args.stat_dict_file is not None:

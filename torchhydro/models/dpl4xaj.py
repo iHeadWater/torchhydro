@@ -1,17 +1,13 @@
 """
 Author: Wenyu Ouyang
 Date: 2023-09-19 09:36:25
-LastEditTime: 2023-10-06 19:31:02
+LastEditTime: 2024-07-15 16:20:19
 LastEditors: Wenyu Ouyang
-Description: 
-FilePath: \torchhydro\torchhydro\models\dpl4xaj.py
+Description: The method comes from this paper: https://doi.org/10.1038/s41467-021-26107-z It use Deep Learning (DL) methods to Learn the Parameters of physics-based models (PBM), which is called "differentiable parameter learning" (dPL).
+FilePath: /torchhydro/torchhydro/models/dpl4xaj.py
 Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 """
-"""
-The method comes from this paper: https://doi.org/10.1038/s41467-021-26107-z
-It use Deep Learning (DL) methods to Learn the Parameters of physics-based models (PBM),
-which is called "differentiable parameter learning" (dPL).
-"""
+
 from typing import Optional, Union
 import torch
 from torch import nn
@@ -660,8 +656,7 @@ def linear_reservoir(x, weight, last_y: Optional[Tensor] = None):
     weight1 = 1 - weight
     if last_y is None:
         last_y = torch.full(weight.size(), 0.001).to(x.device)
-    y = weight * last_y + weight1 * x
-    return y
+    return weight * last_y + weight1 * x
 
 
 class Xaj4Dpl(nn.Module):
@@ -934,9 +929,9 @@ class DplAnnXaj(nn.Module):
         n_input_features: int,
         n_output_features: int,
         n_hidden_states: Union[int, tuple, list],
-        dr: Union[int, tuple, list],
         kernel_size: int,
         warmup_length: int,
+        dr: Union[int, tuple, list] = 0.1,
         param_limit_func="sigmoid",
         param_test_way="final",
         source_book="HF",

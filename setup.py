@@ -3,17 +3,17 @@
 """
 Author: Wenyu Ouyang
 Date: 2023-07-31 08:40:43
-LastEditTime: 2023-09-18 16:11:57
+LastEditTime: 2024-05-31 11:34:36
 LastEditors: Wenyu Ouyang
 Description: The setup script
-FilePath: /torchhydro/setup.py
+FilePath: \torchhydro\setup.py
 Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 """
 import io
 from os import path as op
 from setuptools import setup, find_packages
 
-with open("README.md") as readme_file:
+with open("README.md", "r", encoding="utf-8") as readme_file:
     readme = readme_file.read()
 
 here = op.abspath(op.dirname(__file__))
@@ -68,6 +68,6 @@ setup(
     test_suite="tests",
     tests_require=test_requirements,
     url="https://github.com/OuyangWenyu/torchhydro",
-    version='0.0.4',
+    version='0.0.5',
     zip_safe=False,
 )

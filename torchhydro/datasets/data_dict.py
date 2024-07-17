@@ -1,7 +1,7 @@
 """
 Author: Wenyu Ouyang
 Date: 2021-12-31 11:08:29
-LastEditTime: 2024-02-12 19:09:33
+LastEditTime: 2024-05-24 14:52:00
 LastEditors: Wenyu Ouyang
 Description: A dict used for data source and data loader
 FilePath: \torchhydro\torchhydro\datasets\data_dict.py
@@ -13,22 +13,23 @@ from torchhydro.datasets.data_sets import (
     BasinSingleFlowDataset,
     DplDataset,
     FlexibleDataset,
-    HydroGridDataset,
     HydroMeanDataset,
     HydroMultiSourceDataset,
     PrecipitationFusionDataset,
     MopexPrecipitationGagesAttrFusionDataset,
+    Seq2SeqDataset,
+    TransformerDataset,
 )
-
 
 datasets_dict = {
     "StreamflowDataset": BaseDataset,
     "SingleflowDataset": BasinSingleFlowDataset,
     "DplDataset": DplDataset,
-    "GridDataset": HydroGridDataset,
     "MeanDataset": HydroMeanDataset,
     "FlexDataset": FlexibleDataset,
     "MultiSourceDataset": HydroMultiSourceDataset,
     "PrecipitationFusionDataset": PrecipitationFusionDataset,
     "MopexPrecipitationGagesAttrFusionDataset": MopexPrecipitationGagesAttrFusionDataset,
+    "Seq2SeqDataset": Seq2SeqDataset,
+    "TransformerDataset": TransformerDataset,
 }

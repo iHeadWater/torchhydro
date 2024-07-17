@@ -1,7 +1,7 @@
 """
 Author: Xinzhuo Wu
 Date: 2023-12-29 14:20:18
-LastEditTime: 2024-04-09 20:05:03
+LastEditTime: 2024-05-31 11:00:01
 LastEditors: Wenyu Ouyang
 Description: A simple evaluate model test
 FilePath: \torchhydro\tests\test_evaluate_grid_lstm.py
@@ -12,9 +12,9 @@ import os
 import pytest
 import warnings
 from torchhydro.configs.config import cmd, default_config_file, update_cfg
-from torchhydro.datasets.data_dict import datasets_dict
 from torchhydro.trainers.deep_hydro import DeepHydro
-from torchhydro.trainers.trainer import set_random_seed, save_result
+from torchhydro.trainers.trainer import set_random_seed
+from torchhydro.trainers.resulter import Resulter
 
 warnings.filterwarnings("ignore")
 
@@ -38,7 +38,7 @@ def config_data():
         ctx=[2],
         model_name="SPPLSTM2",
         model_hyperparam={
-            "seq_length": 168,
+            "forecast_history": 168,
             "forecast_length": 24,
             "p_n_output": 1,
             "p_n_hidden_states": 60,
@@ -46,7 +46,7 @@ def config_data():
             "p_in_channels": 1,
             "p_out_channels": 8,
             "len_c": 15,
-            "s_seq_length": None,
+            "s_forecast_history": None,
             "s_n_output": 1,
             "s_n_hidden_states": 60,
             "s_dropout": 0.25,
@@ -101,12 +101,11 @@ def config_data():
 def test_evaluate_spp_lstm(config_data):
     random_seed = config_data["training_cfgs"]["random_seed"]
     set_random_seed(random_seed)
+    resulter = Resulter(config_data)
     model = DeepHydro(config_data)
     test_acc = model.model_evaluate()
     print("summary test_accuracy", test_acc[0])
-    save_result(
-        config_data["data_cfgs"]["test_path"],
-        "0",
+    resulter.save_result(
+        test_acc[0],
         test_acc[1],
-        test_acc[2],
     )

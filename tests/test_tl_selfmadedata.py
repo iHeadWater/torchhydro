@@ -1,12 +1,13 @@
 """
 Author: Wenyu Ouyang
 Date: 2023-10-05 16:16:48
-LastEditTime: 2023-12-21 20:35:57
+LastEditTime: 2024-07-15 15:59:34
 LastEditors: Wenyu Ouyang
 Description: Transfer learning for local basins with hydro_opendata
-FilePath: \torchhydro\tests\test_tl_selfmadedata.py
+FilePath: /torchhydro/tests/test_tl_selfmadedata.py
 Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 """
+
 import os
 import pytest
 from hydroutils.hydro_file import get_lastest_file_in_a_dir
@@ -92,7 +93,8 @@ def test_transfer_gages_lstm_model(
         opt="Adadelta",
         loss_func="RMSESum",
         batch_size=5,
-        rho=20,
+        forecast_history=0,
+        forecast_length=20,
         rs=1234,
         train_period=["2014-10-01", "2019-10-01"],
         test_period=["2019-10-01", "2021-10-01"],

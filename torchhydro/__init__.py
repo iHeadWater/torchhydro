@@ -1,7 +1,7 @@
 """
 Author: Wenyu Ouyang
 Date: 2023-07-31 08:40:43
-LastEditTime: 2024-04-06 17:29:03
+LastEditTime: 2024-06-04 18:41:37
 LastEditors: Wenyu Ouyang
 Description: Top-level package for torchhydro
 FilePath: \torchhydro\torchhydro\__init__.py
@@ -12,7 +12,7 @@ Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 
 __author__ = """Wenyu Ouyang"""
 __email__ = "wenyuouyang@outlook.com"
-__version__ = '0.0.4'
+__version__ = "0.0.5"
 
 from pathlib import Path
 import yaml
@@ -28,7 +28,7 @@ def read_setting(setting_path):
     if not os.path.exists(setting_path):
         raise FileNotFoundError(f"Configuration file not found: {setting_path}")
 
-    with open(setting_path, "r") as file:
+    with open(setting_path, "r", encoding="utf-8") as file:
         setting = yaml.safe_load(file)
 
     example_setting = (
@@ -37,12 +37,16 @@ def read_setting(setting_path):
         "  client_endpoint: 'http://minio.waterism.com:9000' # Update with your URL\n"
         "  access_key: 'your minio access key'\n"
         "  secret: 'your minio secret'\n\n"
-        "trainer: ['zxw', 'xxx']\n"
-        "tester: ['yyy']\n\n"
         "local_data_path:\n"
         "  root: 'D:\\data\\waterism' # Update with your root data directory\n"
         "  datasets-origin: 'D:\\data\\waterism\\datasets-origin'\n"
         "  datasets-interim: 'D:\\data\\waterism\\datasets-interim'"
+        "postgres:\n"
+        "  server_url: 'your database server URL'"  # if you don't have a database, you can just write this key and leave the rest empty
+        "  port: your database port"
+        "  username: 'your database username'"
+        "  password: 'your database password'"
+        "  database: 'your database name'"
     )
 
     if setting is None:
@@ -53,9 +57,8 @@ def read_setting(setting_path):
     # Define the expected structure
     expected_structure = {
         "minio": ["server_url", "client_endpoint", "access_key", "secret"],
-        "trainer": list,
-        "tester": list,
         "local_data_path": ["root", "datasets-origin", "datasets-interim"],
+        "postgres": ["server_url", "port", "username", "password", "database"],
     }
 
     # Validate the structure

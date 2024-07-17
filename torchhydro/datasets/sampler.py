@@ -1,7 +1,7 @@
 """
 Author: Wenyu Ouyang
 Date: 2023-09-25 08:21:27
-LastEditTime: 2024-04-09 15:18:45
+LastEditTime: 2024-05-27 15:59:09
 LastEditors: Wenyu Ouyang
 Description: Some sampling class or functions
 FilePath: \torchhydro\torchhydro\datasets\sampler.py
@@ -22,7 +22,7 @@ class KuaiSampler(RandomSampler):
         data_source,
         batch_size,
         warmup_length,
-        rho,
+        rho_horizon,
         ngrid,
         nt,
     ):
@@ -38,14 +38,14 @@ class KuaiSampler(RandomSampler):
             we need batch_size to calculate the number of samples in an epoch
         warmup_length : int
             warmup length, typically for physical hydrological models
-        rho : int
-            sequence length of a mini-batch
+        rho_horizon : int
+            sequence length of a mini-batch, for encoder-decoder models, rho+horizon, for decoder-only models, horizon
         ngrid : int
             number of basins
         nt : int
             number of all periods
         """
-        while batch_size * rho >= ngrid * nt:
+        while batch_size * rho_horizon >= ngrid * nt:
             # try to use a smaller batch_size to make the model runnable
             batch_size = int(batch_size / 10)
         batch_size = max(batch_size, 1)
@@ -53,7 +53,7 @@ class KuaiSampler(RandomSampler):
         n_iter_ep = int(
             np.ceil(
                 np.log(0.01)
-                / np.log(1 - batch_size * rho / ngrid / (nt - warmup_length))
+                / np.log(1 - batch_size * rho_horizon / ngrid / (nt - warmup_length))
             )
         )
         assert n_iter_ep >= 1
@@ -118,11 +118,14 @@ class HydroSampler(Sampler[int]):
         else:
             generator = self.generator
 
-        for _ in range(basin_number):
-            select_basin = torch.randint(0, basin_number, (1,)).item()
-            x = torch.randperm(basin_range)
-            for i in range(0, basin_range, n):
-                yield from (x[i : i + n] + basin_range * select_basin).tolist()
+        # basin_list = torch.randperm(basin_number)
+        # for select_basin in basin_list:
+        #     x = torch.randperm(basin_range)
+        #     for i in range(0, basin_range, n):
+        #         yield from (x[i : i + n] + basin_range * select_basin.item()).tolist()
+        x = torch.randperm(self.num_samples)
+        for i in range(0, self.num_samples, n):
+            yield from (x[i : i + n]).tolist()
 
     def __len__(self) -> int:
         return self.num_samples

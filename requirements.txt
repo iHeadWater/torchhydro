@@ -4,11 +4,9 @@ tbparse
 fsspec
 intake
 
-torch~=1.12.1
+torch
 torchvision
-torch-scatter
 tensorboard
-pillow~=9.5.0
 shap
 kaggle
 

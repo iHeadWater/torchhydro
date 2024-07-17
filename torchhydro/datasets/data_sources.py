@@ -1,10 +1,10 @@
 """
 Author: Wenyu Ouyang
 Date: 2024-04-02 14:37:09
-LastEditTime: 2024-04-09 13:35:56
+LastEditTime: 2024-07-10 09:26:07
 LastEditors: Wenyu Ouyang
 Description: A module for different data sources
-FilePath: \torchhydro\torchhydro\datasets\data_sources.py
+FilePath: /torchhydro/torchhydro/datasets/data_sources.py
 Copyright (c) 2023-2024 Wenyu Ouyang. All rights reserved.
 """
 
@@ -22,6 +22,7 @@ from hydroutils.hydro_stat import cal_fdc
 from pandas.core.dtypes.common import is_string_dtype, is_numeric_dtype
 import xarray as xr
 import pint_xarray  # noqa but it is used in the code
+from tqdm import tqdm
 
 from hydrodataset import HydroDataset, Camels
 from hydroutils import (
@@ -32,6 +33,7 @@ from hydroutils import (
 )
 
 from tqdm import tqdm
+from hydrodatasource.reader.data_source import SelfMadeHydroDataset
 
 from torchhydro import CACHE_DIR, SETTING
 
@@ -2256,7 +2258,8 @@ class GagesMopexPrepFusion(HydroDataset):
         self.mopex_data_path = mopex_data_path
         self.gages = Gages(gages_data_path)
         self.mopex = Mopex(mopex_data_path)
-        self.gages_sites = list(set(self.gages.read_site_info()["STAID"]).intersection(set(self.mopex.read_site_info())))
+        self.gages_sites = list(
+            set(self.gages.read_site_info()["STAID"]).intersection(set(self.mopex.read_site_info())))
 
     def get_name(self):
         return "GagesMopexPrepFusion"
@@ -2357,6 +2360,7 @@ class GagesMopexPrepFusion(HydroDataset):
     def read_mean_prcp(self, gage_id_lst) -> np.array:
         return self.gages.read_mean_prcp(gage_id_lst)
 
+
 class MopexPrepGagesAttrFusion(HydroDataset):
     def __init__(
         self,
@@ -2385,7 +2389,8 @@ class MopexPrepGagesAttrFusion(HydroDataset):
         self.mopex_data_path = mopex_data_path
         self.gages = Gages(gages_data_path)
         self.mopex = Mopex(mopex_data_path)
-        self.gages_sites = list(set(self.gages.read_site_info()["STAID"]).intersection(set(self.mopex.read_site_info())))
+        self.gages_sites = list(
+            set(self.gages.read_site_info()["STAID"]).intersection(set(self.mopex.read_site_info())))
 
     def get_name(self):
         return "MopexPrepGagesAttrFusion"
@@ -2479,8 +2484,10 @@ class MopexPrepGagesAttrFusion(HydroDataset):
     def read_mean_prcp(self, gage_id_lst) -> np.array:
         return self.gages.read_mean_prcp(gage_id_lst)
 
+
 data_sources_dict = {
     "camels_us": Camels,
+    "selfmadehydrodataset": SelfMadeHydroDataset,
     "usgs4camels": SupData4Camels,
     "modiset4camels": ModisEt4Camels,
     "nldas4camels": Nldas4Camels,

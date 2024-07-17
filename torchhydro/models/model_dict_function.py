@@ -7,7 +7,7 @@ Description: Dicts including models (which are seq-first), losses, and optims
 FilePath: \torchhydro\torchhydro\models\model_dict_function.py
 Copyright (c) 2021-2022 Wenyu Ouyang. All rights reserved.
 """
-
+from torchhydro.models.coupledlstm import CoupledLSTMModel
 from torchhydro.models.cudnnlstm import (
     CudnnLstmModel,
     LinearCudnnLstmModel,
@@ -16,6 +16,7 @@ from torchhydro.models.cudnnlstm import (
     CudnnLstmModelMultiOutput,
     CpuLstmModel,
 )
+from torchhydro.models.cnnlstm import CNN_LSTM_Model
 
 from torchhydro.models.simple_lstm import SimpleLSTMForecast
 from torchhydro.models.seq2seq import GeneralSeq2Seq
@@ -50,6 +51,8 @@ pytorch_model_dict = {
     "SimpleLSTMForecast": SimpleLSTMForecast,
     "SPPLSTM2": SPP_LSTM_Model_2,
     "Seq2Seq": GeneralSeq2Seq,
+    "CNNLSTM": CNN_LSTM_Model,
+    "CoupledLSTM": CoupledLSTMModel,
 }
 
 pytorch_criterion_dict = {

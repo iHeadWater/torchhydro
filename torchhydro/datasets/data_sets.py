@@ -244,6 +244,11 @@ class BaseDataset(Dataset):
 
     def _trans2da_and_setunits(self, ds):
         """Set units for dataarray transfromed from dataset"""
+        for var_name in ds.data_vars:
+            if ds[var_name].dtype == 'timedelta64[ns]':
+                # 将时间单位从纳秒转换为天，并转换为float类型
+                ds[var_name] = ds[var_name].astype('timedelta64[D]').astype(float)
+
         result = ds.to_array(dim="variable")
         units_dict = {
             var: ds[var].attrs["units"]
@@ -1057,3 +1062,237 @@ class HydroMultiSourceDataset(HydroMeanDataset):
             var_subset_list.append(subset)
 
         return xr.concat(var_subset_list, dim="time")
+
+class PrecipitationFusionDataset(BaseDataset):
+    def __init__(self, data_cfgs: dict, is_tra_val_te: str):
+        """
+        Parameters
+        ----------
+        data_cfgs
+            configs for reading source data
+        is_tra_val_te
+            train, vaild or test
+        """
+        super(PrecipitationFusionDataset, self).__init__(data_cfgs, is_tra_val_te)
+
+    @property
+    def data_source(self):
+        gages_data_path = self.data_cfgs["source_cfgs"]["source_paths"][0]
+        mopex_data_path = self.data_cfgs["source_cfgs"]["source_paths"][1]
+        return data_sources_dict["gagesmopexprepfusion"](gages_data_path, mopex_data_path)
+
+    def _read_xyc(self):
+        """Read x, y, c data from data source
+
+        Returns
+        -------
+        tuple[xr.Dataset, xr.Dataset, xr.Dataset]
+             x, y, c data
+        """
+        # y
+        data_output_ds = self.data_source.read_streamflow_ts(
+            self.t_s_dict["sites_id"],
+            self.t_s_dict["t_final_range"],
+            self.data_cfgs["target_cols"],
+        )
+        if self.data_source.streamflow_unit != "mm/d":
+            data_output_ds = streamflow_unit_conv(
+                data_output_ds, self.data_source.read_area(self.t_s_dict["sites_id"])
+            )
+
+        # x
+        data_forcing_ds = self.data_source.read_forcing_ts(
+            self.t_s_dict["sites_id"],
+            self.t_s_dict["t_final_range"],
+            # 6 comes from here
+            self.data_cfgs["relevant_cols"],
+        )
+
+        # c
+        data_attr_ds = self.data_source.read_attr(
+            self.t_s_dict["sites_id"],
+            self.data_cfgs["constant_cols"],
+            all_number=True,
+        )
+
+        self.x_origin, self.y_origin, self.c_origin = self._to_dataarray_with_unit(
+           data_forcing_ds, data_output_ds, data_attr_ds
+        )
+
+    def __getitem__(self, item: int):
+        if not self.train_mode:
+            basin = self.t_s_dict["sites_id"][item]
+            # we don't need warmup_length for models yet
+            x = self.x.sel(basin=basin).to_numpy().T
+            y = self.y.sel(basin=basin).to_numpy().T
+            if self.c is None or self.c.shape[-1] == 0:
+                return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+            c = self.c.sel(basin=basin).values
+            c = np.repeat(c, x.shape[0], axis=0).reshape(c.shape[0], -1).T
+            xc = np.concatenate((x, c), axis=1)
+            return torch.from_numpy(xc).float(), torch.from_numpy(y).float()
+        basin, time = self.lookup_table[item]
+        seq_length = self.rho
+        warmup_length = self.warmup_length
+        # p_gages = (
+        #     self.x[0].sel(
+        #         basin=basin,
+        #         time=slice(
+        #             time - np.timedelta64(warmup_length, "D"),
+        #             time + np.timedelta64(seq_length - 1, "D"),
+        #         ),
+        #     ).to_numpy()
+        # ).T
+        # p_mopex = (
+        #     self.x[1].sel(
+        #         basin=basin,
+        #         time=slice(
+        #             time - np.timedelta64(warmup_length, "D"),
+        #             time + np.timedelta64(seq_length - 1, "D"),
+        #         ),
+        #     ).to_numpy()
+        # ).T
+        x = (
+            self.x.sel(
+                basin=basin,
+                time=slice(
+                    time - np.timedelta64(warmup_length, "D"),
+                    time + np.timedelta64(seq_length - 1, "D"),
+                ),
+            ).to_numpy()
+        ).T
+        # x = np.concatenate((p_gages, p_mopex, x), axis=1)
+        if self.c is not None and self.c.shape[-1] > 0:
+            c = self.c.sel(basin=basin).values
+            c = np.tile(c, (warmup_length + seq_length, 1))
+            x = np.concatenate((x, c), axis=1)
+        # for y, we don't need warmup as warmup are only used for get initial value for some state variables
+        y = (
+            self.y.sel(
+                basin=basin,
+                time=slice(
+                    time,
+                    time + np.timedelta64(seq_length - 1, "D"),
+                ),
+            )
+            .to_numpy()
+            .T
+        )
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+
+class MopexPrecipitationGagesAttrFusionDataset(BaseDataset):
+    def __init__(self, data_cfgs: dict, is_tra_val_te: str):
+        """
+        Parameters
+        ----------
+        data_cfgs
+            configs for reading source data
+        is_tra_val_te
+            train, vaild or test
+        """
+        super(MopexPrecipitationGagesAttrFusionDataset, self).__init__(data_cfgs, is_tra_val_te)
+
+    @property
+    def data_source(self):
+        gages_data_path = self.data_cfgs["source_cfgs"]["source_paths"][0]
+        mopex_data_path = self.data_cfgs["source_cfgs"]["source_paths"][1]
+        return data_sources_dict["mopexprepgagesattrfusion"](gages_data_path, mopex_data_path)
+
+    def _read_xyc(self):
+        """Read x, y, c data from data source
+
+        Returns
+        -------
+        tuple[xr.Dataset, xr.Dataset, xr.Dataset]
+             x, y, c data
+        """
+        # y
+        data_output_ds = self.data_source.read_streamflow_ts(
+            self.t_s_dict["sites_id"],
+            self.t_s_dict["t_final_range"],
+            self.data_cfgs["target_cols"],
+        )
+        if self.data_source.streamflow_unit != "mm/d":
+            data_output_ds = streamflow_unit_conv(
+                data_output_ds, self.data_source.read_area(self.t_s_dict["sites_id"])
+            )
+
+        # x
+        data_forcing_ds = self.data_source.read_forcing_ts(
+            self.t_s_dict["sites_id"],
+            self.t_s_dict["t_final_range"],
+            # 6 comes from here
+            self.data_cfgs["relevant_cols"],
+        )
+
+        # c
+        data_attr_ds = self.data_source.read_attr(
+            self.t_s_dict["sites_id"],
+            self.data_cfgs["constant_cols"],
+            all_number=True,
+        )
+
+        self.x_origin, self.y_origin, self.c_origin = self._to_dataarray_with_unit(
+           data_forcing_ds, data_output_ds, data_attr_ds
+        )
+
+    def __getitem__(self, item: int):
+        if not self.train_mode:
+            basin = self.t_s_dict["sites_id"][item]
+            # we don't need warmup_length for models yet
+            x = self.x.sel(basin=basin).to_numpy().T
+            y = self.y.sel(basin=basin).to_numpy().T
+            if self.c is None or self.c.shape[-1] == 0:
+                return torch.from_numpy(x).float(), torch.from_numpy(y).float()
+            c = self.c.sel(basin=basin).values
+            c = np.repeat(c, x.shape[0], axis=0).reshape(c.shape[0], -1).T
+            xc = np.concatenate((x, c), axis=1)
+            return torch.from_numpy(xc).float(), torch.from_numpy(y).float()
+        basin, time = self.lookup_table[item]
+        seq_length = self.rho
+        warmup_length = self.warmup_length
+        # p_gages = (
+        #     self.x[0].sel(
+        #         basin=basin,
+        #         time=slice(
+        #             time - np.timedelta64(warmup_length, "D"),
+        #             time + np.timedelta64(seq_length - 1, "D"),
+        #         ),
+        #     ).to_numpy()
+        # ).T
+        # p_mopex = (
+        #     self.x[1].sel(
+        #         basin=basin,
+        #         time=slice(
+        #             time - np.timedelta64(warmup_length, "D"),
+        #             time + np.timedelta64(seq_length - 1, "D"),
+        #         ),
+        #     ).to_numpy()
+        # ).T
+        x = (
+            self.x.sel(
+                basin=basin,
+                time=slice(
+                    time - np.timedelta64(warmup_length, "D"),
+                    time + np.timedelta64(seq_length - 1, "D"),
+                ),
+            ).to_numpy()
+        ).T
+        # x = np.concatenate((p_gages, p_mopex, x), axis=1)
+        if self.c is not None and self.c.shape[-1] > 0:
+            c = self.c.sel(basin=basin).values
+            c = np.tile(c, (warmup_length + seq_length, 1))
+            x = np.concatenate((x, c), axis=1)
+        # for y, we don't need warmup as warmup are only used for get initial value for some state variables
+        y = (
+            self.y.sel(
+                basin=basin,
+                time=slice(
+                    time,
+                    time + np.timedelta64(seq_length - 1, "D"),
+                ),
+            )
+            .to_numpy()
+            .T
+        )
+        return torch.from_numpy(x).float(), torch.from_numpy(y).float()

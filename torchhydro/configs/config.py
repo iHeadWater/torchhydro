@@ -24,6 +24,7 @@ Q_CAMELS_US_NAME = "usgsFlow"
 Q_CAMELS_CC_NAME = "Q"
 PRCP_DAYMET_NAME = "prcp"
 PRCP_NLDAS_NAME = "total_precipitation"
+PRCP_MOPEX_NAME = "map"
 PET_MODIS_NAME = "PET"
 PET_NLDAS_NAME = "potential_evaporation"
 NLDAS_NAME = "nldas"
@@ -175,6 +176,7 @@ def default_config_file():
                     "pr",
                     # PRCP_ERA5LAND_NAME is same as PRCP_NLDAS_NAME
                     PRCP_NLDAS_NAME,
+                    PRCP_MOPEX_NAME,
                     "pre",
                     # pet may be negative, but we set negative as 0 because of gamma_norm_cols
                     # https://earthscience.stackexchange.com/questions/12031/does-negative-reference-evapotranspiration-make-sense-using-fao-penman-monteith

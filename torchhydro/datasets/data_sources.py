@@ -2042,6 +2042,7 @@ class Mopex(HydroDataset):
     def read_site_info(self):
         mopex_id_file = self.data_source_description["MOPEXFORCING_DIR"]
         gage_ids = [os.path.splitext(f)[0] for f in os.listdir(mopex_id_file)]
+        gage_ids.sort()
         assert all(x < y for x, y in zip(gage_ids, gage_ids[1:]))
         return gage_ids
 
